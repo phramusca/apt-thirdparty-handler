@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="/etc/aptrepo-handler/apps.d"
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+info() {
+  echo "[aptrepo-handler] $*"
+}
+
+is_root() {
+  [ "${EUID:-$(id -u)}" -eq 0 ]
+}
+
+confirm_user() {
+  local title="$1"
+  local message="$2"
+
+  if command -v zenity >/dev/null 2>&1; then
+    zenity --question --title="$title" --width=520 --text="$message"
+    return $?
+  fi
+
+  echo "$message"
+  read -r -p "Continue? [y/N] " ans
+  case "${ans}" in
+    y|Y|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_cmds() {
+  local missing=0
+  for cmd in curl gpg apt-get; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "Missing command: $cmd" >&2
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || die "Missing dependencies."
+}
+
+validate_app_id() {
+  local app_id="$1"
+  [[ "$app_id" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "Invalid app ID: $app_id"
+}
+
+load_app_config() {
+  local app_id="$1"
+  local conf="$CONFIG_DIR/$app_id.conf"
+  [ -f "$conf" ] || die "Configuration not found: $conf"
+
+  # shellcheck source=/dev/null
+  . "$conf"
+
+  : "${APP_ID:?APP_ID is required}"
+  : "${DISPLAY_NAME:?DISPLAY_NAME is required}"
+  : "${KEY_URL:?KEY_URL is required}"
+  : "${KEYRING_PATH:?KEYRING_PATH is required}"
+  : "${LIST_FILE_PATH:?LIST_FILE_PATH is required}"
+  : "${REPO_LINE:?REPO_LINE is required}"
+  : "${PACKAGE_NAME:?PACKAGE_NAME is required}"
+
+  [ "$APP_ID" = "$app_id" ] || die "APP_ID mismatch in config ($APP_ID != $app_id)"
+}
+
+install_repo_and_package() {
+  local tmp_key
+  tmp_key="$(mktemp)"
+  trap 'rm -f "$tmp_key"' EXIT
+
+  mkdir -p /etc/apt/keyrings
+
+  info "Downloading GPG key..."
+  curl -fsSL "$KEY_URL" | gpg --dearmor > "$tmp_key"
+  install -m 0644 "$tmp_key" "$KEYRING_PATH"
+
+  info "Writing APT repository..."
+  printf '%s\n' "$REPO_LINE" > "$LIST_FILE_PATH"
+  chmod 0644 "$LIST_FILE_PATH"
+
+  info "Running apt update..."
+  apt-get update
+
+  info "Installing package: $PACKAGE_NAME"
+  apt-get install -y "$PACKAGE_NAME"
+
+  info "Installation completed for: $DISPLAY_NAME"
+}
+
+run_as_root() {
+  local app_id="$1"
+  validate_app_id "$app_id"
+  require_cmds
+  load_app_config "$app_id"
+  install_repo_and_package
+}
+
+extract_app_id_from_uri() {
+  local uri="$1"
+  local app_id
+
+  app_id="${uri#aptrepo://}"
+  app_id="${app_id%%/*}"
+  app_id="${app_id%%\?*}"
+  app_id="${app_id%%#*}"
+  [ -n "$app_id" ] || die "Invalid URI: $uri"
+  printf '%s\n' "$app_id"
+}
+
+run_interactive() {
+  local uri="$1"
+  [[ "$uri" == aptrepo://* ]] || die "Unsupported URI: $uri"
+
+  local app_id
+  app_id="$(extract_app_id_from_uri "$uri")"
+  validate_app_id "$app_id"
+  load_app_config "$app_id"
+
+  local summary
+  summary="Install ${DISPLAY_NAME}?\n\nApp ID: ${APP_ID}\nPackage: ${PACKAGE_NAME}\n\nKey: ${KEY_URL}\nRepository: ${REPO_LINE}"
+
+  if ! confirm_user "Third-party APT installation" "$summary"; then
+    info "Cancelled by user."
+    exit 0
+  fi
+
+  if command -v pkexec >/dev/null 2>&1; then
+    exec pkexec "$0" --run-id "$app_id"
+  fi
+
+  die "pkexec not found. Install policykit-1."
+}
+
+main() {
+  if [ "${1:-}" = "--run-id" ]; then
+    shift
+    [ $# -eq 1 ] || die "Usage: $0 --run-id <app-id>"
+    is_root || die "--run-id mode must be executed as root."
+    run_as_root "$1"
+    exit 0
+  fi
+
+  [ $# -eq 1 ] || die "Usage: $0 aptrepo://<app-id>"
+  run_interactive "$1"
+}
+
+main "$@"
+

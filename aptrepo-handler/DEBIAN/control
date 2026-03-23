@@ -1,0 +1,11 @@
+Package: aptrepo-handler
+Version: 1.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: phramusca
+Depends: bash, curl, gpg, policykit-1
+Description: One-click installer handler for third-party APT repositories
+ Registers the aptrepo:// URI scheme and installs allowlisted third-party
+ APT repository entries with explicit user confirmation.
+

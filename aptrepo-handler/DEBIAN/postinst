@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
+
+# If installed with sudo, register the URI handler for the invoking user.
+if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER}" != "root" ]; then
+  su - "${SUDO_USER}" -c "xdg-mime default aptrepo-handler.desktop x-scheme-handler/aptrepo" >/dev/null 2>&1 || true
+fi
+
