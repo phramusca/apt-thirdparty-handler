@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_DIR="/etc/aptrepo-handler/apps.d"
+CONFIG_DIR="/etc/apt-thirdparty-handler/apps.d"
 
 die() {
   echo "Error: $*" >&2
@@ -9,7 +9,7 @@ die() {
 }
 
 info() {
-  echo "[aptrepo-handler] $*"
+  echo "[apt-thirdparty-handler] $*"
 }
 
 is_root() {
@@ -108,7 +108,7 @@ extract_app_id_from_uri() {
   local uri="$1"
   local app_id
 
-  app_id="${uri#aptrepo://}"
+  app_id="${uri#apt-thirdparty://}"
   app_id="${app_id%%/*}"
   app_id="${app_id%%\?*}"
   app_id="${app_id%%#*}"
@@ -118,7 +118,7 @@ extract_app_id_from_uri() {
 
 run_interactive() {
   local uri="$1"
-  [[ "$uri" == aptrepo://* ]] || die "Unsupported URI: $uri"
+  [[ "$uri" == apt-thirdparty://* ]] || die "Unsupported URI: $uri"
 
   local app_id
   app_id="$(extract_app_id_from_uri "$uri")"
@@ -135,7 +135,7 @@ run_interactive() {
   fi
 
   local log_file
-  log_file="/tmp/aptrepo-handler-${app_id}.log"
+  log_file="/tmp/apt-thirdparty-handler-${app_id}.log"
   : > "$log_file"
   chmod 0644 "$log_file"
 
@@ -144,18 +144,18 @@ run_interactive() {
   if [ ! -t 1 ] && command -v x-terminal-emulator >/dev/null 2>&1; then
     if x-terminal-emulator -e bash -lc \
       "{
-         echo '[aptrepo-handler] Launching privileged command...'
-         echo '[aptrepo-handler] Command: pkexec $0 --run-id $app_id'
+         echo '[apt-thirdparty-handler] Launching privileged command...'
+         echo '[apt-thirdparty-handler] Command: pkexec $0 --run-id $app_id'
          pkexec '$0' --run-id '$app_id'
        } 2>&1 | tee -a '$log_file';
        status=\${PIPESTATUS[0]};
        echo;
        if [ \$status -eq 0 ]; then
-         echo '[aptrepo-handler] Done.'
+         echo '[apt-thirdparty-handler] Done.'
        else
-         echo '[aptrepo-handler] Failed with exit code:' \$status
+         echo '[apt-thirdparty-handler] Failed with exit code:' \$status
        fi
-       echo '[aptrepo-handler] Log file:' '$log_file'
+       echo '[apt-thirdparty-handler] Log file:' '$log_file'
        echo 'Press Enter to close...';
        read -r _" >/dev/null 2>&1; then
       exit 0
@@ -164,8 +164,8 @@ run_interactive() {
 
   if command -v pkexec >/dev/null 2>&1; then
     if {
-      echo "[aptrepo-handler] Launching privileged command..."
-      echo "[aptrepo-handler] Command: pkexec $0 --run-id $app_id"
+      echo "[apt-thirdparty-handler] Launching privileged command..."
+      echo "[apt-thirdparty-handler] Command: pkexec $0 --run-id $app_id"
       pkexec "$0" --run-id "$app_id"
     } >>"$log_file" 2>&1; then
       info "Log file: $log_file"
@@ -188,9 +188,8 @@ main() {
     exit 0
   fi
 
-  [ $# -eq 1 ] || die "Usage: $0 aptrepo://<app-id>"
+  [ $# -eq 1 ] || die "Usage: $0 apt-thirdparty://<app-id>"
   run_interactive "$1"
 }
 
 main "$@"
-

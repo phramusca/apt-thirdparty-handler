@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Builds the aptrepo-handler .deb package from repository root.
+# Builds the apt-thirdparty-handler .deb package from repository root.
 set -euo pipefail
 
 VERSION="${1:-1.0}"
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 PACKAGE_DIR="${SCRIPT_DIR}/aptrepo-handler"
 
-chmod 755 "${PACKAGE_DIR}/usr/bin/aptrepo-handler"
-chmod 644 "${PACKAGE_DIR}/usr/share/applications/aptrepo-handler.desktop"
+chmod 755 "${PACKAGE_DIR}/usr/bin/apt-thirdparty-handler"
+chmod 644 "${PACKAGE_DIR}/usr/share/applications/apt-thirdparty-handler.desktop"
 chmod 755 "${PACKAGE_DIR}/DEBIAN/postinst"
 chmod 755 "${PACKAGE_DIR}/DEBIAN/prerm"
 

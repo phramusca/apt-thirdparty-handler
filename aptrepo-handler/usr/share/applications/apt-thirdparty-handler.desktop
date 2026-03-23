@@ -1,9 +1,9 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=APT Repo Handler
+Name=APT Third-Party Handler
 Comment=One-click installer for third-party APT repositories
-Exec=aptrepo-handler %u
+Exec=apt-thirdparty-handler %u
 Terminal=false
 NoDisplay=true
-MimeType=x-scheme-handler/aptrepo
+MimeType=x-scheme-handler/apt-thirdparty

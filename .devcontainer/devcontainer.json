@@ -1,5 +1,5 @@
 {
-  "name": "aptrepo-handler-dev (deb build)",
+  "name": "apt-thirdparty-handler-dev (deb build)",
   "build": {
     "dockerfile": "Dockerfile"
   },

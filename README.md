@@ -1,18 +1,18 @@
-# aptrepo-handler
+# apt-thirdparty-handler
 
-`aptrepo://<app-id>` handler to install software from third-party APT repositories in one click.
+`apt-thirdparty://<app-id>` handler to install software from third-party APT repositories in one click.
 
 Examples:
 
-- `aptrepo://bruno`
-- `aptrepo://cursor`
+- `apt-thirdparty://bruno`
+- `apt-thirdparty://cursor`
 
 ## How It Works
 
 The handler does not execute arbitrary URLs from links.  
 It reads a local allowlist configuration per app:
 
-- `/etc/aptrepo-handler/apps.d/<app-id>.conf`
+- `/etc/apt-thirdparty-handler/apps.d/<app-id>.conf`
 
 Each config defines:
 
@@ -27,7 +27,7 @@ Each config defines:
 Install with your package manager UI or with:
 
 ```bash
-sudo dpkg -i aptrepo-handler_1.0_all.deb
+sudo dpkg -i apt-thirdparty-handler_1.0_all.deb
 ```
 
 If `dpkg` reports missing dependencies:
@@ -39,19 +39,19 @@ sudo apt -f install
 After installation, test:
 
 ```bash
-xdg-open 'aptrepo://bruno'
+xdg-open 'apt-thirdparty://bruno'
 ```
 
 ### Uninstall
 
 ```bash
-sudo dpkg -r aptrepo-handler
+sudo dpkg -r apt-thirdparty-handler
 ```
 
 Purge package config files:
 
 ```bash
-sudo dpkg -P aptrepo-handler
+sudo dpkg -P apt-thirdparty-handler
 ```
 
 ## For Developers
@@ -61,18 +61,18 @@ sudo dpkg -P aptrepo-handler
 From the repository root:
 
 ```bash
-chmod +x build-aptrepo-handler.sh
-./build-aptrepo-handler.sh
+chmod +x build-apt-thirdparty-handler.sh
+./build-apt-thirdparty-handler.sh
 ```
 
 Output:
 
-- `aptrepo-handler_<version>_all.deb` (generated at repository root)
+- `apt-thirdparty-handler_<version>_all.deb` (generated at repository root)
 
 Build with a custom version:
 
 ```bash
-./build-aptrepo-handler.sh 1.1
+./build-apt-thirdparty-handler.sh 1.1
 ```
 
 ## App Config Format
@@ -93,13 +93,13 @@ PACKAGE_NAME="bruno"
 
 Once installed:
 
-- click an `aptrepo://bruno` link
+- click an `apt-thirdparty://bruno` link
 - confirm the installation
 - authenticate (pkexec)
 - the script installs the repository and package
 
 ## Security
 
-- allowlist-based app IDs (`aptrepo://<id>`)
+- allowlist-based app IDs (`apt-thirdparty://<id>`)
 - no dynamic parameters executed from the URL
 - strict app ID validation (`[a-z0-9][a-z0-9._-]*`)
