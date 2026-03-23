@@ -2,10 +2,9 @@
 
 `apt-thirdparty://<app-id>` handler to install software from third-party APT repositories in one click.
 
-Examples:
+Example:
 
-- `apt-thirdparty://bruno`
-- `apt-thirdparty://cursor`
+- `apt-thirdparty://my-app`
 
 ## How It Works
 
@@ -21,8 +20,8 @@ Each config defines:
 - the `deb ...` repository line to write
 - the package name to install
 
-By default, the package ships with local configs (bootstrapping).  
-You can then update the allowlist without shipping a new `.deb` by publishing a signed `apps.tar`.
+By default, app definitions come from the signed remote allowlist.  
+You can update the allowlist without shipping a new `.deb` by publishing a signed `apps.tar`.
 
 ## For Users
 
@@ -43,7 +42,7 @@ sudo apt -f install
 After installation, test:
 
 ```bash
-xdg-open 'apt-thirdparty://bruno'
+xdg-open 'apt-thirdparty://my-app'
 ```
 
 Refresh signed whitelist manually:
@@ -90,20 +89,20 @@ Build with a custom version:
 Example:
 
 ```bash
-APP_ID="bruno"
-DISPLAY_NAME="Bruno"
-KEY_URL="https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x9FA6017ECABE0266"
-KEYRING_PATH="/etc/apt/keyrings/bruno.gpg"
-LIST_FILE_PATH="/etc/apt/sources.list.d/bruno.list"
-REPO_LINE="deb [arch=amd64 signed-by=/etc/apt/keyrings/bruno.gpg] http://debian.usebruno.com/ bruno stable"
-PACKAGE_NAME="bruno"
+APP_ID="my-app"
+DISPLAY_NAME="My App"
+KEY_URL="https://example.com/repo/signing-key.asc"
+KEYRING_PATH="/etc/apt/keyrings/my-app.gpg"
+LIST_FILE_PATH="/etc/apt/sources.list.d/my-app.list"
+REPO_LINE="deb [arch=amd64 signed-by=/etc/apt/keyrings/my-app.gpg] https://example.com/repo stable main"
+PACKAGE_NAME="my-app"
 ```
 
 ## Usage
 
 Once installed:
 
-- click an `apt-thirdparty://bruno` link
+- click an `apt-thirdparty://my-app` link
 - confirm the installation
 - authenticate (pkexec)
 - the script refreshes whitelist if needed (signed bundle), then installs repository and package
@@ -151,8 +150,7 @@ Prepare an `apps.d` directory containing one `*.conf` per app, e.g.:
 
 ```bash
 apps.d/
-  bruno.conf
-  cursor.conf
+  my-app.conf
 ```
 
 Build + sign the bundle:
