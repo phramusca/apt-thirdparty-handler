@@ -3,7 +3,7 @@ Version: 1.0
 Section: utils
 Priority: optional
 Architecture: all
-Depends: bash, curl, gpg, policykit-1
+Depends: bash, curl, gpg, gpgv, tar, policykit-1
 Maintainer: phramusca
 Description: One-click installer handler for third-party APT repositories
  Registers the apt-thirdparty:// URI scheme and installs allowlisted third-party

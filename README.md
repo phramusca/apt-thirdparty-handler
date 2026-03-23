@@ -13,12 +13,16 @@ The handler does not execute arbitrary URLs from links.
 It reads a local allowlist configuration per app:
 
 - `/etc/apt-thirdparty-handler/apps.d/<app-id>.conf`
+- optionally refreshes this allowlist from a signed remote bundle
 
 Each config defines:
 
 - the GPG key URL to import
 - the `deb ...` repository line to write
 - the package name to install
+
+By default, the package ships with local configs (bootstrapping).  
+You can then update the allowlist without shipping a new `.deb` by publishing a signed `apps.tar`.
 
 ## For Users
 
@@ -40,6 +44,12 @@ After installation, test:
 
 ```bash
 xdg-open 'apt-thirdparty://bruno'
+```
+
+Refresh signed whitelist manually:
+
+```bash
+sudo apt-thirdparty-handler --refresh-index
 ```
 
 ### Uninstall
@@ -96,10 +106,86 @@ Once installed:
 - click an `apt-thirdparty://bruno` link
 - confirm the installation
 - authenticate (pkexec)
-- the script installs the repository and package
+- the script refreshes whitelist if needed (signed bundle), then installs repository and package
 
 ## Security
 
 - allowlist-based app IDs (`apt-thirdparty://<id>`)
 - no dynamic parameters executed from the URL
 - strict app ID validation (`[a-z0-9][a-z0-9._-]*`)
+- signed whitelist refresh (GPG detached signature)
+
+## Remote Whitelist Updates
+
+### Client-side configuration
+
+Edit:
+
+- `/etc/apt-thirdparty-handler/whitelist.conf`
+
+Minimum config:
+
+```bash
+WHITELIST_BASE_URL="https://example.com/apt-thirdparty"
+WHITELIST_REFRESH_INTERVAL_SEC=86400
+```
+
+The handler will fetch:
+
+- `https://example.com/apt-thirdparty/apps.tar`
+- `https://example.com/apt-thirdparty/apps.tar.asc`
+
+### Trust key installation (client side)
+
+You must install the public key used to sign whitelist bundles:
+
+```bash
+curl -fsSL https://example.com/apt-thirdparty/whitelist-signing.pub \
+  | gpg --dearmor \
+  | sudo tee /usr/share/apt-thirdparty-handler/trustedkeys.gpg >/dev/null
+```
+
+### Publisher workflow (server side)
+
+Prepare an `apps.d` directory containing one `*.conf` per app, e.g.:
+
+```bash
+apps.d/
+  bruno.conf
+  cursor.conf
+```
+
+Build + sign the bundle:
+
+```bash
+chmod +x tools/build-whitelist-bundle.sh
+./tools/build-whitelist-bundle.sh ./apps.d "you@example.com" ./out
+```
+
+This produces:
+
+- `out/apps.tar`
+- `out/apps.tar.asc`
+
+Publish both files at your `WHITELIST_BASE_URL`.
+
+### Generate a signing key (GPG)
+
+Create key:
+
+```bash
+gpg --full-generate-key
+```
+
+Export public key for clients:
+
+```bash
+gpg --armor --export "you@example.com" > whitelist-signing.pub
+```
+
+### About minisign vs GPG
+
+- **GPG**: already available on most Linux systems, supports keyrings and detached signatures; this project uses GPG.
+- **minisign**: lighter and simpler signature tool, but requires extra dependency on client machines.
+
+If you want, minisign support can be added later as an optional verifier.

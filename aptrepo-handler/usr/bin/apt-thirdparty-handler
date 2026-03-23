@@ -2,6 +2,13 @@
 set -euo pipefail
 
 CONFIG_DIR="/etc/apt-thirdparty-handler/apps.d"
+STATE_DIR="/var/lib/apt-thirdparty-handler"
+DEFAULT_REFRESH_INTERVAL_SEC=86400
+WHITELIST_CONFIG_FILE="/etc/apt-thirdparty-handler/whitelist.conf"
+WHITELIST_KEYRING="/usr/share/apt-thirdparty-handler/trustedkeys.gpg"
+WHITELIST_BASE_URL=""
+WHITELIST_ARCHIVE_URL=""
+WHITELIST_SIG_URL=""
 
 die() {
   echo "Error: $*" >&2
@@ -10,6 +17,17 @@ die() {
 
 info() {
   echo "[apt-thirdparty-handler] $*"
+}
+
+load_whitelist_settings() {
+  if [ -f "$WHITELIST_CONFIG_FILE" ]; then
+    # shellcheck source=/dev/null
+    . "$WHITELIST_CONFIG_FILE"
+  fi
+
+  WHITELIST_BASE_URL="${WHITELIST_BASE_URL:-}"
+  WHITELIST_ARCHIVE_URL="${WHITELIST_ARCHIVE_URL:-${WHITELIST_BASE_URL%/}/apps.tar}"
+  WHITELIST_SIG_URL="${WHITELIST_SIG_URL:-${WHITELIST_BASE_URL%/}/apps.tar.asc}"
 }
 
 is_root() {
@@ -36,7 +54,7 @@ confirm_user() {
 
 require_cmds() {
   local missing=0
-  for cmd in curl gpg apt-get; do
+  for cmd in curl gpg gpgv tar apt-get; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
       echo "Missing command: $cmd" >&2
       missing=1
@@ -48,6 +66,99 @@ require_cmds() {
 validate_app_id() {
   local app_id="$1"
   [[ "$app_id" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "Invalid app ID: $app_id"
+}
+
+config_exists() {
+  local app_id="$1"
+  [ -f "$CONFIG_DIR/$app_id.conf" ]
+}
+
+get_refresh_interval_sec() {
+  local v="${WHITELIST_REFRESH_INTERVAL_SEC:-$DEFAULT_REFRESH_INTERVAL_SEC}"
+  if [[ "$v" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$v"
+  else
+    printf '%s\n' "$DEFAULT_REFRESH_INTERVAL_SEC"
+  fi
+}
+
+refresh_needed() {
+  local stamp="$STATE_DIR/last_refresh_epoch"
+  local now interval last
+
+  interval="$(get_refresh_interval_sec)"
+  [ "$interval" -gt 0 ] || return 1
+  [ -f "$stamp" ] || return 0
+
+  now="$(date +%s)"
+  last="$(cat "$stamp" 2>/dev/null || echo 0)"
+  [[ "$last" =~ ^[0-9]+$ ]] || return 0
+
+  [ $((now - last)) -ge "$interval" ]
+}
+
+update_refresh_stamp() {
+  mkdir -p "$STATE_DIR"
+  printf '%s\n' "$(date +%s)" > "$STATE_DIR/last_refresh_epoch"
+}
+
+validate_conf_file() {
+  local conf_file="$1"
+  local file_app_id conf_app_id
+
+  file_app_id="$(basename "$conf_file" .conf)"
+  validate_app_id "$file_app_id"
+
+  conf_app_id="$(awk -F'"' '/^APP_ID="/ { print $2; exit }' "$conf_file")"
+  [ -n "$conf_app_id" ] || die "Missing APP_ID in $conf_file"
+  [ "$conf_app_id" = "$file_app_id" ] || die "APP_ID mismatch in $conf_file"
+}
+
+refresh_whitelist_index() {
+  local tmp_dir archive sig_file conf_count
+  load_whitelist_settings
+
+  [ -n "$WHITELIST_BASE_URL" ] || {
+    info "Whitelist URL not configured; using packaged/local allowlist."
+    return 0
+  }
+  [ -f "$WHITELIST_KEYRING" ] || die "Missing trusted keyring: $WHITELIST_KEYRING"
+
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' RETURN
+
+  archive="$tmp_dir/apps.tar"
+  sig_file="$tmp_dir/apps.tar.asc"
+
+  info "Refreshing whitelist index..."
+  info "Downloading archive: $WHITELIST_ARCHIVE_URL"
+  curl -fsSL "$WHITELIST_ARCHIVE_URL" -o "$archive"
+  info "Downloading signature: $WHITELIST_SIG_URL"
+  curl -fsSL "$WHITELIST_SIG_URL" -o "$sig_file"
+
+  info "Verifying signature..."
+  gpgv --keyring "$WHITELIST_KEYRING" "$sig_file" "$archive" >/dev/null
+
+  mkdir -p "$tmp_dir/extracted"
+  tar -xf "$archive" -C "$tmp_dir/extracted"
+  [ -d "$tmp_dir/extracted/apps.d" ] || die "Invalid whitelist archive: missing apps.d/"
+
+  conf_count=0
+  shopt -s nullglob
+  for conf_file in "$tmp_dir"/extracted/apps.d/*.conf; do
+    validate_conf_file "$conf_file"
+    conf_count=$((conf_count + 1))
+  done
+  shopt -u nullglob
+  [ "$conf_count" -gt 0 ] || die "Invalid whitelist archive: no .conf files"
+
+  mkdir -p "$CONFIG_DIR"
+  rm -f "$CONFIG_DIR"/*.conf
+  cp "$tmp_dir"/extracted/apps.d/*.conf "$CONFIG_DIR"/
+  chmod 0644 "$CONFIG_DIR"/*.conf
+
+  update_refresh_stamp
+  info "Whitelist refreshed: $conf_count app(s) installed to $CONFIG_DIR"
 }
 
 load_app_config() {
@@ -100,6 +211,9 @@ run_as_root() {
   local app_id="$1"
   validate_app_id "$app_id"
   require_cmds
+  if refresh_needed || ! config_exists "$app_id"; then
+    refresh_whitelist_index
+  fi
   load_app_config "$app_id"
   install_repo_and_package
 }
@@ -123,11 +237,15 @@ run_interactive() {
   local app_id
   app_id="$(extract_app_id_from_uri "$uri")"
   validate_app_id "$app_id"
-  load_app_config "$app_id"
-
   local summary
-  printf -v summary 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
-    "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
+  if config_exists "$app_id"; then
+    load_app_config "$app_id"
+    printf -v summary 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
+      "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
+  else
+    printf -v summary 'Install app "%s"?\n\nNo local allowlist entry found.\nThe handler will refresh the signed whitelist after authentication, then continue.' \
+      "$app_id"
+  fi
 
   if ! confirm_user "Third-party APT installation" "$summary"; then
     info "Cancelled by user."
@@ -179,6 +297,15 @@ run_interactive() {
 }
 
 main() {
+  if [ "${1:-}" = "--refresh-index" ]; then
+    shift
+    [ $# -eq 0 ] || die "Usage: $0 --refresh-index"
+    is_root || die "--refresh-index mode must be executed as root."
+    require_cmds
+    refresh_whitelist_index
+    exit 0
+  fi
+
   if [ "${1:-}" = "--run-id" ]; then
     shift
     [ $# -eq 1 ] || die "Usage: $0 --run-id <app-id>"
