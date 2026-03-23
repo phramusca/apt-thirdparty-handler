@@ -175,6 +175,16 @@ Create key:
 gpg --full-generate-key
 ```
 
+Recommended choices for this project:
+
+- key type: `ECC (sign only)`
+- curve: `Curve 25519` (default)
+- expiration: e.g. `1y` (renewable)
+- set a strong passphrase (20+ chars, unique, stored in a password manager)
+
+Even for local publishing, a passphrase is recommended: if the machine is compromised,
+an unprotected private signing key can be used immediately.
+
 Export public key for clients:
 
 ```bash
