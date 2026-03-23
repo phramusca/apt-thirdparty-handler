@@ -1,0 +1,26 @@
+{
+  "name": "aptrepo-handler-dev (deb build)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.eol": "\n",
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2
+      },
+      "extensions": [
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  },
+  "initializeCommand": "bash .devcontainer/init-ssh-agent.sh",
+  "mounts": [
+    "source=/tmp/flatpak-https-handler-ssh-agent.sock,target=/ssh-agent,type=bind"
+  ],
+  "remoteEnv": {
+    "SSH_AUTH_SOCK": "/ssh-agent"
+  },
+  "remoteUser": "vscode"
+}

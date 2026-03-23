@@ -20,15 +20,6 @@ Each config defines:
 - the `deb ...` repository line to write
 - the package name to install
 
-## Project Structure
-
-- `DEBIAN/`: Debian packaging metadata (control, postinst, prerm)
-- `usr/bin/aptrepo-handler`: main handler script
-- `usr/share/applications/aptrepo-handler.desktop`: URI scheme registration
-- `etc/aptrepo-handler/apps.d/*.conf`: allowlisted app configurations
-- `install-local.sh`: quick local install script
-- `build-aptrepo-handler.sh`: Debian package build script
-
 ## For Users
 
 ### Install from `.deb`
@@ -67,7 +58,7 @@ sudo dpkg -P aptrepo-handler
 
 ### Build the `.deb`
 
-From `packages/aptrepo-handler`:
+From the repository root:
 
 ```bash
 chmod +x build-aptrepo-handler.sh
@@ -76,26 +67,13 @@ chmod +x build-aptrepo-handler.sh
 
 Output:
 
-- `aptrepo-handler_1.0_all.deb` (generated in the current directory)
+- `aptrepo-handler_<version>_all.deb` (generated at repository root)
 
 Build with a custom version:
 
 ```bash
 ./build-aptrepo-handler.sh 1.1
 ```
-
-### Local Installation (dev/test, without `.deb`)
-
-```bash
-chmod +x install-local.sh
-./install-local.sh
-```
-
-This command:
-
-- copies the script to `~/.local/bin/aptrepo-handler`
-- copies app configs to `/etc/aptrepo-handler/apps.d/` (via `sudo`)
-- registers the `x-scheme-handler/aptrepo` handler
 
 ## App Config Format
 
