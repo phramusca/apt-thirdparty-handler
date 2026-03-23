@@ -21,7 +21,8 @@ confirm_user() {
   local message="$2"
 
   if command -v zenity >/dev/null 2>&1; then
-    zenity --question --title="$title" --width=520 --text="$message"
+    # --no-markup avoids GTK warnings when message contains '&' (e.g. URL query params).
+    zenity --question --title="$title" --width=520 --no-markup --text="$message"
     return $?
   fi
 
@@ -71,19 +72,22 @@ load_app_config() {
 install_repo_and_package() {
   local tmp_key
   tmp_key="$(mktemp)"
-  trap 'rm -f "$tmp_key"' EXIT
+  trap 'rm -f "${tmp_key:-}"' EXIT
 
   mkdir -p /etc/apt/keyrings
 
-  info "Downloading GPG key..."
+  info "Using key URL: $KEY_URL"
+  info "Installing key to: $KEYRING_PATH"
+  info "Downloading and dearmoring GPG key..."
   curl -fsSL "$KEY_URL" | gpg --dearmor > "$tmp_key"
   install -m 0644 "$tmp_key" "$KEYRING_PATH"
 
-  info "Writing APT repository..."
+  info "Writing repository file: $LIST_FILE_PATH"
+  info "Repository line: $REPO_LINE"
   printf '%s\n' "$REPO_LINE" > "$LIST_FILE_PATH"
   chmod 0644 "$LIST_FILE_PATH"
 
-  info "Running apt update..."
+  info "Running apt-get update..."
   apt-get update
 
   info "Installing package: $PACKAGE_NAME"
@@ -122,15 +126,53 @@ run_interactive() {
   load_app_config "$app_id"
 
   local summary
-  summary="Install ${DISPLAY_NAME}?\n\nApp ID: ${APP_ID}\nPackage: ${PACKAGE_NAME}\n\nKey: ${KEY_URL}\nRepository: ${REPO_LINE}"
+  printf -v summary 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
+    "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
 
   if ! confirm_user "Third-party APT installation" "$summary"; then
     info "Cancelled by user."
     exit 0
   fi
 
+  local log_file
+  log_file="/tmp/aptrepo-handler-${app_id}.log"
+  : > "$log_file"
+  chmod 0644 "$log_file"
+
+  # If launched via URI handler, there is usually no attached TTY.
+  # In normal mode, open a terminal to show live output.
+  if [ ! -t 1 ] && command -v x-terminal-emulator >/dev/null 2>&1; then
+    if x-terminal-emulator -e bash -lc \
+      "{
+         echo '[aptrepo-handler] Launching privileged command...'
+         echo '[aptrepo-handler] Command: pkexec $0 --run-id $app_id'
+         pkexec '$0' --run-id '$app_id'
+       } 2>&1 | tee -a '$log_file';
+       status=\${PIPESTATUS[0]};
+       echo;
+       if [ \$status -eq 0 ]; then
+         echo '[aptrepo-handler] Done.'
+       else
+         echo '[aptrepo-handler] Failed with exit code:' \$status
+       fi
+       echo '[aptrepo-handler] Log file:' '$log_file'
+       echo 'Press Enter to close...';
+       read -r _" >/dev/null 2>&1; then
+      exit 0
+    fi
+  fi
+
   if command -v pkexec >/dev/null 2>&1; then
-    exec pkexec "$0" --run-id "$app_id"
+    if {
+      echo "[aptrepo-handler] Launching privileged command..."
+      echo "[aptrepo-handler] Command: pkexec $0 --run-id $app_id"
+      pkexec "$0" --run-id "$app_id"
+    } >>"$log_file" 2>&1; then
+      info "Log file: $log_file"
+      exit 0
+    fi
+    info "Log file: $log_file"
+    die "Privilege escalation failed (pkexec)."
   fi
 
   die "pkexec not found. Install policykit-1."
@@ -140,8 +182,9 @@ main() {
   if [ "${1:-}" = "--run-id" ]; then
     shift
     [ $# -eq 1 ] || die "Usage: $0 --run-id <app-id>"
+    local app_id="$1"
     is_root || die "--run-id mode must be executed as root."
-    run_as_root "$1"
+    run_as_root "$app_id"
     exit 0
   fi
 
