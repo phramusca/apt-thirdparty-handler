@@ -102,9 +102,10 @@ PACKAGE_NAME="my-app"
 Once installed:
 
 - click an `apt-thirdparty://my-app` link
-- confirm the installation
+- confirm the initial action
 - authenticate (pkexec)
-- the script refreshes whitelist if needed (signed bundle), then installs repository and package
+- if no local app config exists yet, the script refreshes the signed whitelist, then asks a second explicit confirmation with exact package/repository details before installing
+- install repository and package
 
 ## Security
 
@@ -112,6 +113,7 @@ Once installed:
 - no dynamic parameters executed from the URL
 - strict app ID validation (`[a-z0-9][a-z0-9._-]*`)
 - signed whitelist refresh (GPG detached signature)
+- automatic first-run key bootstrap over HTTPS (can be overridden with preinstalled trusted keyring)
 
 ## Remote Whitelist Updates
 
@@ -132,10 +134,18 @@ The handler will fetch:
 
 - `https://example.com/apt-thirdparty/apps.tar`
 - `https://example.com/apt-thirdparty/apps.tar.asc`
+- `https://example.com/apt-thirdparty/whitelist-signing.pub` (only if local trusted keyring is missing)
 
 ### Trust key installation (client side)
 
-You must install the public key used to sign whitelist bundles:
+By default, this step is automatic.  
+If `/usr/share/apt-thirdparty-handler/trustedkeys.gpg` is missing, the handler downloads:
+
+- `${WHITELIST_BASE_URL}/whitelist-signing.pub` (or `WHITELIST_KEY_URL` if explicitly configured),
+
+then dearmors it and installs the trusted keyring before signature verification.
+
+Manual installation is still possible:
 
 ```bash
 curl -fsSL https://example.com/apt-thirdparty/whitelist-signing.pub \

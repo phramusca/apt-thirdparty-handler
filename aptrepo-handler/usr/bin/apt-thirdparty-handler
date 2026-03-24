@@ -9,6 +9,7 @@ WHITELIST_KEYRING="/usr/share/apt-thirdparty-handler/trustedkeys.gpg"
 WHITELIST_BASE_URL=""
 WHITELIST_ARCHIVE_URL=""
 WHITELIST_SIG_URL=""
+WHITELIST_KEY_URL=""
 
 die() {
   echo "Error: $*" >&2
@@ -17,6 +18,10 @@ die() {
 
 info() {
   echo "[apt-thirdparty-handler] $*"
+}
+
+can_use_zenity() {
+  command -v zenity >/dev/null 2>&1 && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }
 }
 
 load_whitelist_settings() {
@@ -28,6 +33,7 @@ load_whitelist_settings() {
   WHITELIST_BASE_URL="${WHITELIST_BASE_URL:-}"
   WHITELIST_ARCHIVE_URL="${WHITELIST_ARCHIVE_URL:-${WHITELIST_BASE_URL%/}/apps.tar}"
   WHITELIST_SIG_URL="${WHITELIST_SIG_URL:-${WHITELIST_BASE_URL%/}/apps.tar.asc}"
+  WHITELIST_KEY_URL="${WHITELIST_KEY_URL:-${WHITELIST_BASE_URL%/}/whitelist-signing.pub}"
 }
 
 is_root() {
@@ -37,13 +43,22 @@ is_root() {
 confirm_user() {
   local title="$1"
   local message="$2"
+  local zenity_status
 
-  if command -v zenity >/dev/null 2>&1; then
+  if can_use_zenity; then
     # --no-markup avoids GTK warnings when message contains '&' (e.g. URL query params).
-    zenity --question --title="$title" --width=520 --no-markup --text="$message"
-    return $?
+    if zenity --question --title="$title" --width=520 --no-markup --text="$message"; then
+      return 0
+    fi
+    zenity_status=$?
+    # 1 means user clicked "Cancel". Other values are runtime/display issues.
+    if [ "$zenity_status" -eq 1 ]; then
+      return 1
+    fi
+    info "Zenity unavailable at runtime; falling back to terminal prompt."
   fi
 
+  [ -t 0 ] || die "No interactive prompt available to confirm action."
   echo "$message"
   read -r -p "Continue? [y/N] " ans
   case "${ans}" in
@@ -122,7 +137,7 @@ refresh_whitelist_index() {
     info "Whitelist URL not configured; using packaged/local allowlist."
     return 0
   }
-  [ -f "$WHITELIST_KEYRING" ] || die "Missing trusted keyring: $WHITELIST_KEYRING"
+  ensure_whitelist_keyring
 
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' RETURN
@@ -159,6 +174,29 @@ refresh_whitelist_index() {
 
   update_refresh_stamp
   info "Whitelist refreshed: $conf_count app(s) installed to $CONFIG_DIR"
+}
+
+ensure_whitelist_keyring() {
+  local tmp_keyring keyring_dir
+
+  [ -f "$WHITELIST_KEYRING" ] && return 0
+  [ -n "$WHITELIST_KEY_URL" ] || die "Whitelist key URL is not configured."
+
+  keyring_dir="$(dirname "$WHITELIST_KEYRING")"
+  mkdir -p "$keyring_dir"
+
+  tmp_keyring="$(mktemp)"
+
+  info "Trusted keyring missing; bootstrapping from: $WHITELIST_KEY_URL"
+  curl -fsSL "$WHITELIST_KEY_URL" | gpg --dearmor > "$tmp_keyring"
+  install -m 0644 "$tmp_keyring" "$WHITELIST_KEYRING"
+  rm -f "$tmp_keyring"
+  info "Installed trusted keyring: $WHITELIST_KEYRING"
+}
+
+build_install_summary() {
+  printf 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
+    "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
 }
 
 load_app_config() {
@@ -209,12 +247,33 @@ install_repo_and_package() {
 
 run_as_root() {
   local app_id="$1"
+  local had_local_config=0
+  local needs_refresh=0
   validate_app_id "$app_id"
   require_cmds
-  if refresh_needed || ! config_exists "$app_id"; then
+
+  if config_exists "$app_id"; then
+    had_local_config=1
+  fi
+  if refresh_needed || [ "$had_local_config" -eq 0 ]; then
+    needs_refresh=1
+  fi
+
+  if [ "$needs_refresh" -eq 1 ]; then
     refresh_whitelist_index
   fi
+
   load_app_config "$app_id"
+
+  # If the app config was not known locally at click time, ask one explicit
+  # confirmation with exact package/repository details after signed refresh.
+  if [ "$had_local_config" -eq 0 ]; then
+    if ! confirm_user "Confirm package installation" "$(build_install_summary)"; then
+      info "Cancelled by user after whitelist refresh."
+      exit 0
+    fi
+  fi
+
   install_repo_and_package
 }
 
@@ -240,10 +299,9 @@ run_interactive() {
   local summary
   if config_exists "$app_id"; then
     load_app_config "$app_id"
-    printf -v summary 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
-      "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
+    summary="$(build_install_summary)"
   else
-    printf -v summary 'Install app "%s"?\n\nNo local allowlist entry found.\nThe handler will refresh the signed whitelist after authentication, then continue.' \
+    printf -v summary 'Install app "%s"?\n\nNo local allowlist entry found.\nThe handler will refresh the signed whitelist and bootstrap trust key if needed.\nYou will get a second confirmation with exact package/repository details before install.' \
       "$app_id"
   fi
 
