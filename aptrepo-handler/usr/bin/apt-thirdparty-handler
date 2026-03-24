@@ -316,8 +316,10 @@ load_app_config() {
 
 install_repo_and_package() {
   local tmp_key effective_repo_line
+  local list_backup=""
+  local list_existed=0
   tmp_key="$(mktemp)"
-  trap 'rm -f "${tmp_key:-}"' EXIT
+  trap 'rm -f "${tmp_key:-}" "${list_backup:-}"' EXIT
   effective_repo_line="$(resolve_repo_line)"
 
   mkdir -p /etc/apt/keyrings
@@ -330,11 +332,29 @@ install_repo_and_package() {
 
   info "Writing repository file: $LIST_FILE_PATH"
   info "Repository line: $effective_repo_line"
+  if [ -f "$LIST_FILE_PATH" ]; then
+    list_existed=1
+    list_backup="$(mktemp)"
+    cp "$LIST_FILE_PATH" "$list_backup"
+  fi
   printf '%s\n' "$effective_repo_line" > "$LIST_FILE_PATH"
   chmod 0644 "$LIST_FILE_PATH"
 
   info "Running apt-get update..."
-  apt-get update
+  if ! apt-get update; then
+    info "apt-get update failed after adding repository."
+    if [ "$list_existed" -eq 1 ] && [ -n "$list_backup" ] && [ -f "$list_backup" ]; then
+      info "Restoring previous repository file: $LIST_FILE_PATH"
+      cp "$list_backup" "$LIST_FILE_PATH"
+      chmod 0644 "$LIST_FILE_PATH"
+    else
+      info "Removing repository file: $LIST_FILE_PATH"
+      rm -f "$LIST_FILE_PATH"
+    fi
+    info "Refreshing package lists after rollback..."
+    apt-get update || true
+    die "Repository update failed; repository change rolled back."
+  fi
 
   info "Installing package: $PACKAGE_NAME"
   apt-get install -y "$PACKAGE_NAME"
