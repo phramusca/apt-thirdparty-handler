@@ -140,7 +140,6 @@ refresh_whitelist_index() {
   ensure_whitelist_keyring
 
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' RETURN
 
   archive="$tmp_dir/apps.tar"
   sig_file="$tmp_dir/apps.tar.asc"
@@ -173,6 +172,7 @@ refresh_whitelist_index() {
   chmod 0644 "$CONFIG_DIR"/*.conf
 
   update_refresh_stamp
+  rm -rf "$tmp_dir"
   info "Whitelist refreshed: $conf_count app(s) installed to $CONFIG_DIR"
 }
 
@@ -197,6 +197,26 @@ ensure_whitelist_keyring() {
 build_install_summary() {
   printf 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
     "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
+}
+
+run_pkexec_for_app() {
+  local app_id="$1"
+  local -a cmd
+  cmd=(pkexec)
+
+  # Preserve GUI variables so root-side confirmations can use zenity.
+  if [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ] || [ -n "${XAUTHORITY:-}" ] || [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    cmd+=(env)
+    [ -n "${DISPLAY:-}" ] && cmd+=("DISPLAY=$DISPLAY")
+    [ -n "${WAYLAND_DISPLAY:-}" ] && cmd+=("WAYLAND_DISPLAY=$WAYLAND_DISPLAY")
+    [ -n "${XAUTHORITY:-}" ] && cmd+=("XAUTHORITY=$XAUTHORITY")
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && cmd+=("DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS")
+  fi
+
+  cmd+=("$0" --run-id "$app_id")
+  info "Launching privileged command..."
+  info "Command: ${cmd[*]}"
+  "${cmd[@]}"
 }
 
 load_app_config() {
@@ -320,9 +340,7 @@ run_interactive() {
   if [ ! -t 1 ] && command -v x-terminal-emulator >/dev/null 2>&1; then
     if x-terminal-emulator -e bash -lc \
       "{
-         echo '[apt-thirdparty-handler] Launching privileged command...'
-         echo '[apt-thirdparty-handler] Command: pkexec $0 --run-id $app_id'
-         pkexec '$0' --run-id '$app_id'
+         '$0' --pkexec-run '$app_id'
        } 2>&1 | tee -a '$log_file';
        status=\${PIPESTATUS[0]};
        echo;
@@ -339,11 +357,7 @@ run_interactive() {
   fi
 
   if command -v pkexec >/dev/null 2>&1; then
-    if {
-      echo "[apt-thirdparty-handler] Launching privileged command..."
-      echo "[apt-thirdparty-handler] Command: pkexec $0 --run-id $app_id"
-      pkexec "$0" --run-id "$app_id"
-    } >>"$log_file" 2>&1; then
+    if run_pkexec_for_app "$app_id" >>"$log_file" 2>&1; then
       info "Log file: $log_file"
       exit 0
     fi
@@ -355,6 +369,14 @@ run_interactive() {
 }
 
 main() {
+  if [ "${1:-}" = "--pkexec-run" ]; then
+    shift
+    [ $# -eq 1 ] || die "Usage: $0 --pkexec-run <app-id>"
+    command -v pkexec >/dev/null 2>&1 || die "pkexec not found. Install policykit-1."
+    run_pkexec_for_app "$1"
+    exit 0
+  fi
+
   if [ "${1:-}" = "--refresh-index" ]; then
     shift
     [ $# -eq 0 ] || die "Usage: $0 --refresh-index"
