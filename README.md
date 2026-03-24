@@ -97,6 +97,20 @@ REPO_LINE="deb [arch=amd64 signed-by=/etc/apt/keyrings/my-app.gpg] https://examp
 PACKAGE_NAME="my-app"
 ```
 
+For Ubuntu-derivative repositories (like PPAs), `REPO_LINE` may include a codename placeholder:
+
+```bash
+REPO_LINE="deb [signed-by=/etc/apt/keyrings/my-app.gpg] https://ppa.launchpadcontent.net/vendor/ppa/ubuntu __UBUNTU_CODENAME__ main"
+```
+
+Supported placeholders:
+
+- `__UBUNTU_CODENAME__`
+- `${UBUNTU_CODENAME}`
+- `$UBUNTU_CODENAME`
+
+At install time, the handler resolves this to the Ubuntu base codename detected on the machine (works for Ubuntu and Linux Mint).
+
 ## Usage
 
 Once installed:

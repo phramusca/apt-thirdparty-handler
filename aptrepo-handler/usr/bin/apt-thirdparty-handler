@@ -20,6 +20,80 @@ info() {
   echo "[apt-thirdparty-handler] $*"
 }
 
+read_os_release_var() {
+  local key="$1"
+  local file="${2:-/etc/os-release}"
+  awk -F= -v key="$key" '
+    $1 == key {
+      val = $2
+      gsub(/^"/, "", val)
+      gsub(/"$/, "", val)
+      print val
+      exit
+    }
+  ' "$file" 2>/dev/null || true
+}
+
+resolve_ubuntu_codename() {
+  local codename=""
+
+  # Ubuntu and most derivatives (including Mint) often expose this directly.
+  codename="$(read_os_release_var "UBUNTU_CODENAME")"
+  if [ -n "$codename" ]; then
+    printf '%s\n' "$codename"
+    return 0
+  fi
+
+  # Fallback for some Ubuntu setups.
+  codename="$(read_os_release_var "VERSION_CODENAME")"
+  if [ -n "$codename" ]; then
+    printf '%s\n' "$codename"
+    return 0
+  fi
+
+  # Linux Mint commonly ships Ubuntu base codename here.
+  if [ -f /etc/upstream-release/lsb-release ]; then
+    codename="$(read_os_release_var "DISTRIB_CODENAME" "/etc/upstream-release/lsb-release")"
+    if [ -n "$codename" ]; then
+      printf '%s\n' "$codename"
+      return 0
+    fi
+  fi
+
+  # Last resort when lsb-release is available.
+  if command -v lsb_release >/dev/null 2>&1; then
+    codename="$(lsb_release -u -sc 2>/dev/null || true)"
+    if [ -z "$codename" ]; then
+      codename="$(lsb_release -sc 2>/dev/null || true)"
+    fi
+    if [ -n "$codename" ]; then
+      printf '%s\n' "$codename"
+      return 0
+    fi
+  fi
+
+  die "Unable to detect Ubuntu codename for repository template expansion."
+}
+
+resolve_repo_line() {
+  local line="$REPO_LINE"
+  local needs_codename=0
+  local codename=""
+
+  if [[ "$line" == *"__UBUNTU_CODENAME__"* ]] || [[ "$line" == *'${UBUNTU_CODENAME}'* ]] || [[ "$line" == *'$UBUNTU_CODENAME'* ]]; then
+    needs_codename=1
+  fi
+
+  if [ "$needs_codename" -eq 1 ]; then
+    codename="$(resolve_ubuntu_codename)"
+    line="${line//__UBUNTU_CODENAME__/$codename}"
+    line="${line//\$\{UBUNTU_CODENAME\}/$codename}"
+    line="${line//\$UBUNTU_CODENAME/$codename}"
+  fi
+
+  printf '%s\n' "$line"
+}
+
 can_use_zenity() {
   command -v zenity >/dev/null 2>&1 && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }
 }
@@ -195,8 +269,10 @@ ensure_whitelist_keyring() {
 }
 
 build_install_summary() {
+  local effective_repo_line
+  effective_repo_line="$(resolve_repo_line)"
   printf 'Install %s?\n\nApp ID: %s\nPackage: %s\n\nKey: %s\nRepository: %s' \
-    "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$REPO_LINE"
+    "$DISPLAY_NAME" "$APP_ID" "$PACKAGE_NAME" "$KEY_URL" "$effective_repo_line"
 }
 
 run_pkexec_for_app() {
@@ -239,9 +315,10 @@ load_app_config() {
 }
 
 install_repo_and_package() {
-  local tmp_key
+  local tmp_key effective_repo_line
   tmp_key="$(mktemp)"
   trap 'rm -f "${tmp_key:-}"' EXIT
+  effective_repo_line="$(resolve_repo_line)"
 
   mkdir -p /etc/apt/keyrings
 
@@ -252,8 +329,8 @@ install_repo_and_package() {
   install -m 0644 "$tmp_key" "$KEYRING_PATH"
 
   info "Writing repository file: $LIST_FILE_PATH"
-  info "Repository line: $REPO_LINE"
-  printf '%s\n' "$REPO_LINE" > "$LIST_FILE_PATH"
+  info "Repository line: $effective_repo_line"
+  printf '%s\n' "$effective_repo_line" > "$LIST_FILE_PATH"
   chmod 0644 "$LIST_FILE_PATH"
 
   info "Running apt-get update..."
