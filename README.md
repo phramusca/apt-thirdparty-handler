@@ -70,7 +70,6 @@ sudo dpkg -P apt-thirdparty-handler
 From the repository root:
 
 ```bash
-chmod +x build-apt-thirdparty-handler.sh
 ./build-apt-thirdparty-handler.sh
 ```
 
