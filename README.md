@@ -145,24 +145,25 @@ curl -fsSL https://example.com/apt-thirdparty/whitelist-signing.pub \
 
 ### Publisher workflow (server side)
 
-Prepare an `apps.d` directory containing one `*.conf` per app, e.g.:
+Whitelist publication is managed in `phramusca.github.io`.
+
+Prepare an `apps.d` directory containing one `*.conf` per app in that repository, e.g.:
 
 ```bash
 apps.d/
   my-app.conf
 ```
 
-Build + sign the bundle:
+Build + sign the bundle from `phramusca.github.io`:
 
 ```bash
-chmod +x tools/build-whitelist-bundle.sh
-./tools/build-whitelist-bundle.sh ./apps.d "you@example.com" ./out
+./tools/build-whitelist-bundle.sh ./.apt-thirdparty/apps.d "you@example.com" ./apt-thirdparty
 ```
 
 This produces:
 
-- `out/apps.tar`
-- `out/apps.tar.asc`
+- `apt-thirdparty/apps.tar`
+- `apt-thirdparty/apps.tar.asc`
 
 Publish both files at your `WHITELIST_BASE_URL`.
 
