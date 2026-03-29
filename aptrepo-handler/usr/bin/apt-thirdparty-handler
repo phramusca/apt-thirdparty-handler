@@ -462,14 +462,14 @@ run_interactive() {
     die "Privilege escalation failed (pkexec)."
   fi
 
-  die "pkexec not found. Install policykit-1."
+  die "pkexec not found. Install the pkexec package (on older systems: policykit-1)."
 }
 
 main() {
   if [ "${1:-}" = "--pkexec-run" ]; then
     shift
     [ $# -eq 1 ] || die "Usage: $0 --pkexec-run <app-id>"
-    command -v pkexec >/dev/null 2>&1 || die "pkexec not found. Install policykit-1."
+    command -v pkexec >/dev/null 2>&1 || die "pkexec not found. Install the pkexec package (on older systems: policykit-1)."
     run_pkexec_for_app "$1"
     exit 0
   fi

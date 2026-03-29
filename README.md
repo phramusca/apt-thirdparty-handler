@@ -30,14 +30,10 @@ You can update the allowlist without shipping a new `.deb` by publishing a signe
 Install with your package manager UI or with:
 
 ```bash
-sudo dpkg -i apt-thirdparty-handler_1.0_all.deb
+sudo apt install ./apt-thirdparty-handler_1.0_all.deb
 ```
 
-If `dpkg` reports missing dependencies:
-
-```bash
-sudo apt -f install
-```
+### To go further
 
 After installation, test:
 
