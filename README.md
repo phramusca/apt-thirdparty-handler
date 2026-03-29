@@ -215,9 +215,44 @@ Export public key for clients:
 gpg --armor --export "you@example.com" > whitelist-signing.pub
 ```
 
-### About minisign vs GPG
+### Copy the signing key to another machine
 
-- **GPG**: already available on most Linux systems, supports keyrings and detached signatures; this project uses GPG.
-- **minisign**: lighter and simpler signature tool, but requires extra dependency on client machines.
+Use one identity on every machine where you publish; copy the **secret** key (it stays passphrase-protected).
 
-If you want, minisign support can be added later as an optional verifier.
+On the source machine, find the key ID
+
+```bash
+gpg --list-secret-keys --with-fingerprint
+```
+
+then:
+
+```bash
+gpg --armor --export-secret-keys KEYID > signing-secret.asc
+```
+
+Transfer `signing-secret.asc` over a trusted channel (encrypted USB, `scp`, etc.—not email or a git repo). On the destination:
+
+```bash
+gpg --import signing-secret.asc
+shred -u signing-secret.asc   # or rm after a secure wipe
+```
+
+Keep a separate encrypted backup if you need recovery after disk loss.
+
+### Expiration and rotation
+
+With a short expiry (e.g. `1y`), plan before the key expires.
+
+**Extend the same key** (recommended if nothing is compromised): fingerprint stays the same.
+
+```bash
+gpg --edit-key KEYID
+# gpg> expire
+# gpg> save
+gpg --armor --export "you@example.com" > whitelist-signing.pub
+```
+
+Republish `whitelist-signing.pub`. Clients must refresh the public key material in `trustedkeys.gpg` (re-import the updated armored public key into that keyring, or remove the keyring only if you are sure the next download from `WHITELIST_KEY_URL` is trustworthy).
+
+**Switch to a new signing key**: generate a new key; during overlap, publish both public keys in one file, e.g. `gpg --armor --export OLDKEYID NEWKEYID > whitelist-signing.pub`; sign bundles with the new secret key; after clients have updated, remove the old public key from the published file and from client keyrings.
